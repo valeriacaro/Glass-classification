@@ -1,0 +1,274 @@
+---
+title: "Projecte AD"
+author: "Valèria Caro i Jan Sallent"
+date: "27/5/2022"
+output: pdf_document
+---
+
+Lectura de les dades:
+
+```{r}
+glass_data <- read.table("glass.data", header = FALSE, sep = ',', dec = '.')
+head(glass_data)
+```
+
+Treiem la primera columna: és l'ID, no ens serveix de res.
+
+```{r}
+glass_data <- glass_data[,2:11]
+head(glass_data)
+```
+
+Canviem els noms a les variables:
+
+```{r}
+names(glass_data) = c("RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", "Type")
+head(glass_data)
+```
+
+Estudiem correlació entre variables:
+
+```{r}
+library(GGally)
+ggpairs(glass_data)
+ggcorr(glass_data[,1:9], label = TRUE)
+```
+
+
+## PCA
+
+Treiem la variable type pq el que volem veure es que si realment podem ajuntar vidres del mateix tipus amb el tipus al que realment corresponen; a mes no es variable numerica.
+
+```{r}
+glass_var <- glass_data[,1:9]
+glass_pca = prcomp(glass_var, scale = TRUE)
+library(factoextra)
+fviz_eig(glass_pca, addlabels = TRUE)
+```
+
+```{r}
+library(psych)
+scree(glass_var,main ="Gràfic de sedimentació")
+```
+
+Amb 5 dimensions ja aconseguim explicar 89.4% de la variabilitat de les dades. Gràfic de sedimentació diu d'agafar-ne.
+
+```{r}
+(glass_pca = prcomp(glass_var, scale = TRUE))
+var = (glass_pca$sdev)**2
+cumsum(var)
+```
+
+```{r}
+fviz_pca_var(glass_pca, axes = c(1, 2))
+fviz_pca_var(glass_pca, axes = c(3, 4))
+```
+
+```{r}
+par(mfrow=c(1,2))
+fviz_pca_biplot(glass_pca, repel = TRUE, axes = c(1,2), habillage = glass_data$Type)
+fviz_pca_biplot(glass_pca, repel = TRUE, axes = c(3,4), habillage = glass_data$Type)
+par(mfrow=c(1,1))
+```
+
+PC1 = - 0.55 * RI + 0.26 * Na - 0.11 * Mg + 0.43 * Al + 0.23 * Si + 0.22 * K - 0.49 * Ca + 0.25 * Ba - 0.19 * Fe
+PC2 = 0.29 * RI + 0.27 * Na - 0.59 * Mg + 0.295 * Al - 0.16 * Si - 0.15 * K + 0.35 * Ca + 0.48 * Ba -0.06 Fe
+PC3 = -0.09 * RI + 0.38 * Na - 0.01 * Mg - 0.33 * Al + 0.46 * Si - 0.66 * K + 0.001 * Ca - 0.07 * Ba - 0.28 * Fe
+PC4 = -0.15 * RI - 0.49 * Na - 0.38 * Mg + 0.14 * Al + 0.65 * Si + 0.04 * K + 0.28 * Ca - 0.13 * Ba + 0.23 * Fe
+PC5 = 0.07 * RI - 0.15 * Na - 0.12 * Mg - 0.014 * Al - 0.01 * Si + 0.31 * K + 0.19 * Ca - 0.25 * Ba - 0.87 * Fe
+
+##  QDA/LDA
+
+Separem les dades en training i test; les de test les utilitzarem per comparar-les amb les prediccions del qda i el lda:
+
+```{r}
+library(caTools)
+glass_scale <- data.frame(cbind(scale(glass_data[,1:9]), Type = glass_data$Type))
+split = sample.split(glass_scale$Type, SplitRatio = 0.7)
+training_set = subset(glass_data, split == TRUE)
+test_set = subset(glass_data, split == FALSE)
+```
+
+```{r}
+library(GGally)
+library(ggplot2)
+library(plot.matrix)
+type_1 <- training_set[training_set$Type == 1,]
+type_2 <- training_set[training_set$Type == 2,]
+type_3 <- training_set[training_set$Type == 3,]
+type_5 <- training_set[training_set$Type == 5,]
+type_6 <- training_set[training_set$Type == 6,]
+type_7 <- training_set[training_set$Type == 7,]
+ggcorr(type_1[,1:9], label = TRUE)
+ggcorr(type_2[,1:9], label = TRUE)
+ggcorr(type_3[,1:9], label = TRUE)
+ggcorr(type_5[,1:9], label = TRUE)
+ggcorr(type_6[,1:9], label = TRUE)
+ggcorr(type_7[,1:9], label = TRUE)
+cov1 <- as.matrix(cov(type_1))
+plot(cov1)
+cov2 <- as.matrix(cov(type_2))
+plot(cov2)
+cov3 <- as.matrix(cov(type_3))
+plot(cov3)
+cov5 <- as.matrix(cov(type_5))
+plot(cov5)
+cov6 <- as.matrix(cov(type_6))
+plot(cov6)
+cov7 <- as.matrix(cov(type_7))
+plot(cov7)
+```
+
+```{r}
+library(heplots)
+library(car)
+library(carData)
+boxM(cbind(RI, Na, Mg, Al, Si, K, Ca, Ba, Fe) ~ as.factor(Type) , training_set)
+```
+
+```{r}
+library(caret)
+glass_lda = train(as.factor(Type) ~ ., method = "lda", trControl = trainControl(method = "cv", number = 10), metric = "Accuracy", data = training_set)
+confusionMatrix(glass_lda)
+print(glass_lda)
+```
+
+Prediccions amb LDA:
+```{r}
+prediccions <- predict(glass_lda, newdata = test_set)
+test_accuracy = 0
+for (i in 1:length(test_set$Type)){
+  if (test_set$Type[i] == prediccions[i])
+    test_accuracy = test_accuracy + 1
+}
+(test_accuracy = test_accuracy/length(test_set$Type))*100
+```
+Codi del QDA que dona error:
+```{r}
+# library(caret)
+# glass_qda = train(as.factor(Type) ~ ., method = "qda", trControl = trainControl(method = "cv", number = 10), metric = "Accuracy", data = training_set)
+# confusionMatrix(glass_qda)
+# print(glass_qda)
+```
+
+
+Examinem bé la proporció entre dades:
+
+```{r}
+par(mfrow=c(1,2))
+type.tab = table(glass_data$Type)
+barplot(type.tab)
+pie(type.tab)
+par(mfrow=c(1,1))
+```
+
+Provem de fer un lda i un qda ajuntant classes:
+
+```{r}
+glass_data_prova = glass_scale
+glass_data_prova$Type[glass_data_prova$Type >= 5] = 5 # Tots no-window junts
+par(mfrow=c(1,2))
+type.tab = table(glass_data_prova$Type)
+barplot(type.tab)
+pie(type.tab)
+par(mfrow=c(1,1))
+type_1 <- glass_data_prova[glass_data_prova$Type == 1,]
+type_2 <- glass_data_prova[glass_data_prova$Type == 2,]
+type_3 <- glass_data_prova[glass_data_prova$Type == 3,]
+type_5 <- glass_data_prova[glass_data_prova$Type == 5,]
+cov1 <- as.matrix(cov(type_1))
+plot(cov1)
+cov2 <- as.matrix(cov(type_2))
+plot(cov2)
+cov3 <- as.matrix(cov(type_3))
+plot(cov3)
+cov5 <- as.matrix(cov(type_5))
+plot(cov5)
+par(mfrow=c(1,1))
+library(heplots)
+boxM(cbind(RI, Na, Mg, Al, Si, K, Ca, Ba, Fe) ~ as.factor(Type) , glass_data_prova)
+glass_lda = train(as.factor(Type) ~ ., method = "lda", trControl = trainControl(method = "cv", number = 10), metric = "Accuracy", data = glass_data_prova)
+confusionMatrix(glass_lda)
+print(glass_lda)
+glass_qda = train(as.factor(Type) ~ ., method = "qda", trControl = trainControl(method = "cv", number = 10), metric = "Accuracy", data = glass_data_prova)
+confusionMatrix(glass_qda)
+print(glass_qda)
+```
+
+
+Provem de fer un altre lda i un qda ajuntant classes:
+
+```{r}
+glass_data_prova = glass_scale
+glass_data_prova$Type[glass_data_prova$Type == 3] = 1 # processat de flotat junts
+glass_data_prova$Type[glass_data_prova$Type >= 5] = 3 # no finestres
+par(mfrow=c(1,2))
+type.tab = table(glass_data_prova$Type)
+barplot(type.tab)
+pie(type.tab)
+par(mfrow=c(1,1))
+type_1 <- glass_data_prova[glass_data_prova$Type == 1,]
+type_2 <- glass_data_prova[glass_data_prova$Type == 2,]
+type_3 <- glass_data_prova[glass_data_prova$Type == 3,]
+cov1 <- as.matrix(cov(type_1))
+plot(cov1)
+cov2 <- as.matrix(cov(type_2))
+plot(cov2)
+cov3 <- as.matrix(cov(type_3))
+plot(cov3)
+par(mfrow=c(1,1))
+library(heplots)
+boxM(cbind(RI, Na, Mg, Al, Si, K, Ca, Ba, Fe) ~ as.factor(Type) , glass_data_prova)
+glass_lda = train(as.factor(Type) ~ ., method = "lda", trControl = trainControl(method = "cv", number = 10), metric = "Accuracy", data = glass_data_prova)
+confusionMatrix(glass_lda)
+print(glass_lda)
+glass_qda = train(as.factor(Type) ~ ., method = "qda", trControl = trainControl(method = "cv", number = 10), metric = "Accuracy", data = glass_data_prova)
+confusionMatrix(glass_qda)
+print(glass_qda)
+```
+
+## KNN
+
+```{r}
+glass_knn = train(as.factor(Type) ~ ., method = "knn", tuneGrid = expand.grid(k = 1:10),preProcess = c('scale', "center"), trControl  = trainControl(method  = "cv", number  = length(glass_data$Type)), metric = "Accuracy", data = glass_data)
+glass_knn
+plot(glass_knn)
+```
+```{r}
+confusionMatrix(glass_knn)
+```
+## CLUSTER
+
+no se si hauriem de treure la target variable o no
+
+```{r}
+library(factoextra)
+glass <- glass_data[,1:9]
+fviz_nbclust(glass, kmeans, method = "wss")
+km = kmeans(glass, centers = 7)
+fviz_cluster(km, glass, geom = "point")
+fviz_nbclust(glass_scale[,1:9], kmeans, method = "wss")
+km = kmeans(glass_scale[,1:9], centers = 7)
+fviz_cluster(km, glass_scale[,1:9], geom = "point")
+```
+
+
+Veiem que hi ha grups que son molt propers entre ells
+No escalat:
+  6 ; 7+3+4 ; 1+2+5
+Escalat:
+  6 ; 7+3+4+1 ; 2 ; 5  
+
+
+#Agglomerative hierarchical clustering
+
+```{r}
+
+fviz_nbclust(glass_scale[,1:9], FUN = hcut,
+hc_method = "complete", k.max = 20,
+method = "wss")
+D = dist(glass_scale[,1:9])
+hc = hclust(D, method = "complete")
+fviz_dend(hc, k = 10)
+```
+
